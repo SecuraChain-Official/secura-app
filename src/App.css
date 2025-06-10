@@ -1,0 +1,51 @@
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.tabs {
+  margin-top: 20px;
+}
+
+.tab-headers {
+  display: flex;
+  margin-bottom: 20px;
+}
+
+.tab-headers button {
+  padding: 10px 20px;
+  margin-right: 10px;
+  cursor: pointer;
+}
+
+.message-form {
+  margin-bottom: 30px;
+}
+
+.message-form input, 
+.message-form textarea {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 10px;
+}
+
+.inbox, .outbox, .group-list, .group-chat {
+  margin-top: 30px;
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+}
+
+li {
+  border: 1px solid #ddd;
+  padding: 15px;
+  margin-bottom: 10px;
+  border-radius: 5px;
+}
+
+.unread {
+  background-color: #f0f8ff;
+}
