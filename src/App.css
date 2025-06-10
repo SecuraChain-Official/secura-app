@@ -1,51 +1,40 @@
-.app {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
+body, #root, .app-root {
+  height: 100vh;
+  margin: 0;
+  background: #bfc9e0;
+  font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
 }
 
-.tabs {
-  margin-top: 20px;
-}
-
-.tab-headers {
+.app-root {
   display: flex;
-  margin-bottom: 20px;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
 }
 
-.tab-headers button {
-  padding: 10px 20px;
-  margin-right: 10px;
-  cursor: pointer;
+.chat-app {
+  display: flex;
+  width: 1100px;
+  height: 700px;
+  background: #f5f6fa;
+  border-radius: 18px;
+  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.2);
+  overflow: hidden;
+  flex-direction: column;
 }
 
-.message-form {
-  margin-bottom: 30px;
-}
-
-.message-form input, 
-.message-form textarea {
-  width: 100%;
-  padding: 8px;
-  margin-bottom: 10px;
-}
-
-.inbox, .outbox, .group-list, .group-chat {
-  margin-top: 30px;
-}
-
-ul {
-  list-style: none;
-  padding: 0;
-}
-
-li {
-  border: 1px solid #ddd;
-  padding: 15px;
-  margin-bottom: 10px;
-  border-radius: 5px;
-}
-
-.unread {
-  background-color: #f0f8ff;
+.app-header {
+  height: 56px;
+  background: #3b3663;
+  color: #e6e5e9;
+  font-size: 22px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  padding-left: 32px;
+  letter-spacing: 1px;
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  z-index: 2;
 }

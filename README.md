@@ -1,6 +1,6 @@
 # Secura Blockchain Messaging App
 
-Secura is a decentralized, end-to-end encrypted messaging app built on a Substrate blockchain. Messages are stored off-chain on IPFS, and only message CIDs and metadata are stored on-chain for privacy and scalability.
+Secura is a decentralized, end-to-end encrypted messaging app built on a Secura Chain. Messages are stored off-chain on IPFS, and only message CIDs and metadata are stored on-chain for privacy and scalability.
 
 ---
 

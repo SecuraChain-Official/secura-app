@@ -1,0 +1,54 @@
+/* MessageInput.css */
+.message-input-container {
+  display: flex;
+  align-items: center;
+  padding: 18px 32px;
+  background: #fff;
+  border-top: 1px solid #dadada;
+  border-radius: 0 0 18px 0;
+  gap: 12px;
+}
+
+.message-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: #f0f1f6;
+  border-radius: 24px;
+  padding: 12px 18px;
+  font-size: 16px;
+  margin-right: 8px;
+}
+
+.message-send-btn {
+  background: #6c63ff;
+  color: #fff;
+  border: none;
+  border-radius: 24px;
+  padding: 10px 28px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.message-send-btn:disabled {
+  background: #bfc9e0;
+  cursor: not-allowed;
+}
+
+.emoji-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  margin-right: 4px;
+  margin-left: 0;
+  outline: none;
+  transition: background 0.2s;
+}
+
+.emoji-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -1,35 +1,16 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { web3Enable, web3Accounts, web3FromSource } from '@polkadot/extension-dapp';
 import { u8aToString } from '@polkadot/util';
 import { create } from 'ipfs-http-client';
+import Sidebar from './components/Sidebar';
+import ChatWindow from './components/ChatWindow';
+import MessageInput from './components/MessageInput';
 import './App.css';
 
 const ipfs = create({ url: 'http://127.0.0.1:5001/api/v0' });
 
-const BLOCK_TIME_MS = 6000; // Adjust if your chain uses a different block time
-const GENESIS_TIMESTAMP = 1749488148000; // Set to your chain's genesis timestamp in ms if known
 
-function blockToDate(blockNumber) {
-  return new Date(GENESIS_TIMESTAMP + blockNumber * BLOCK_TIME_MS).toLocaleString();
-}
-
-function getContentCid(content_cid) {
-  try {
-    return u8aToString(content_cid);
-  } catch (e) {
-    return '';
-  }
-}
-
-function arrayPairsToObject(arr) {
-  if (!Array.isArray(arr)) return arr;
-  const obj = {};
-  for (const [key, value] of arr) {
-    obj[key] = value;
-  }
-  return obj;
-}
 
 function App() {
   const [api, setApi] = useState(null);
@@ -41,6 +22,9 @@ function App() {
   const [allMessages, setAllMessages] = useState([]);
   const [messageCache, setMessageCache] = useState({});
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [newContact, setNewContact] = useState('');
+  const inputRef = useRef();
 
   // Connect to chain and extension
   useEffect(() => {
@@ -74,12 +58,12 @@ function App() {
     connect();
   }, []);
 
-  // Fetch all messages (inbox + outbox)
+  // Fetch all messages for the account
   const fetchAllMessages = useCallback(async () => {
     if (!api || !selectedAccount) return;
     let messages = [];
 
-    // Inbox
+    // Fetch all inbox messages
     const inbox = await api.query.messaging.inbox(selectedAccount.address);
     const inboxIds = inbox.toArray ? inbox.toArray() : [];
     for (const id of inboxIds) {
@@ -87,24 +71,20 @@ function App() {
         const data = await api.query.messaging.messages(id);
         if (data.isSome) {
           const msg = data.unwrap();
-          const msgObj = arrayPairsToObject(msg);
-          const contentCid = getContentCid(msgObj.contentCid);
           messages.push({
-            id: typeof id?.toHex === 'function' ? id.toHex() : id?.toString?.() ?? String(id),
-            sender: msgObj.sender?.toString?.() ?? '',
-            recipient: msgObj.recipient?.toString?.() ?? '',
-            contentCid,
-            timestamp: msgObj.timestamp?.toNumber?.() ?? 0,
-            read: msgObj.read?.valueOf?.() ?? false,
+            id: id.toString(),
+            sender: msg.sender.toString(),
+            recipient: msg.recipient.toString(),
+            contentCid: u8aToString(msg.contentCid),
+            timestamp: msg.timestamp.toNumber(),
+            read: msg.read.valueOf(),
             direction: 'in'
           });
         }
-      } catch (err) {
-        console.error('Error processing inbox message:', { id, err });
-      }
+      } catch (err) { }
     }
 
-    // Outbox
+    // Fetch all outbox messages
     const outbox = await api.query.messaging.outbox(selectedAccount.address);
     const outboxIds = outbox.toArray ? outbox.toArray() : [];
     for (const id of outboxIds) {
@@ -112,57 +92,67 @@ function App() {
         const data = await api.query.messaging.messages(id);
         if (data.isSome) {
           const msg = data.unwrap();
-          const msgObj = arrayPairsToObject(msg);
-          const contentCid = getContentCid(msgObj.contentCid);
           messages.push({
-            id: typeof id?.toHex === 'function' ? id.toHex() : id?.toString?.() ?? String(id),
-            sender: msgObj.sender?.toString?.() ?? '',
-            recipient: msgObj.recipient?.toString?.() ?? '',
-            contentCid,
-            timestamp: msgObj.timestamp?.toNumber?.() ?? 0,
-            read: msgObj.read?.valueOf?.() ?? false,
+            id: id.toString(),
+            sender: msg.sender.toString(),
+            recipient: msg.recipient.toString(),
+            contentCid: u8aToString(msg.contentCid),
+            timestamp: msg.timestamp.toNumber(),
+            read: msg.read.valueOf(),
             direction: 'out'
           });
         }
-      } catch (err) {
-        console.error('Error processing outbox message:', { id, err });
-      }
+      } catch (err) { }
     }
 
-    // Sort by timestamp
     messages.sort((a, b) => a.timestamp - b.timestamp);
     setAllMessages(messages);
 
-    // Build contacts list
+    // Build contacts list from all messages (excluding self)
     const contactSet = new Set();
     messages.forEach(msg => {
-      if (msg.direction === 'in') contactSet.add(msg.sender);
-      if (msg.direction === 'out') contactSet.add(msg.recipient);
+      if (msg.sender !== selectedAccount.address) contactSet.add(msg.sender);
+      if (msg.recipient !== selectedAccount.address) contactSet.add(msg.recipient);
     });
     setContacts(Array.from(contactSet));
+  }, [api, selectedAccount]);
 
-    // Fetch IPFS content
-    for (const msg of messages) {
-      const cid = msg.contentCid;
-      if (cid && !messageCache[cid]) {
-        try {
-          const content = [];
-          for await (const chunk of ipfs.cat(cid)) {
-            content.push(chunk);
-          }
-          const total = content.reduce((acc, curr) => [...acc, ...curr], []);
-          const text = new TextDecoder().decode(new Uint8Array(total));
-          setMessageCache(prev => ({ ...prev, [cid]: text }));
-        } catch (e) {
-          setMessageCache(prev => ({ ...prev, [cid]: '[IPFS fetch failed]' }));
-        }
-      }
-    }
-  }, [api, selectedAccount, messageCache]);
-
+  // Fetch messages at app start and when dependencies change
   useEffect(() => { fetchAllMessages(); }, [fetchAllMessages]);
 
-  // Send message
+  // Auto-select first contact if none is selected and contacts exist
+  useEffect(() => {
+    if (!selectedContact && contacts.length > 0) {
+      setSelectedContact(contacts[0]);
+    }
+    // eslint-disable-next-line
+  }, [contacts]);
+
+  // Fetch IPFS content for messages
+  useEffect(() => {
+    const fetchContent = async () => {
+      for (const msg of allMessages) {
+        const cid = msg.contentCid;
+        if (cid && !messageCache[cid]) {
+          try {
+            const content = [];
+            for await (const chunk of ipfs.cat(cid)) {
+              content.push(chunk);
+            }
+            const total = content.reduce((acc, curr) => [...acc, ...curr], []);
+            const text = new TextDecoder().decode(new Uint8Array(total));
+            setMessageCache(prev => ({ ...prev, [cid]: text }));
+          } catch (e) {
+            setMessageCache(prev => ({ ...prev, [cid]: '[IPFS fetch failed]' }));
+          }
+        }
+      }
+    };
+    fetchContent();
+    // eslint-disable-next-line
+  }, [allMessages]);
+
+  // Send message (to contact)
   const sendMessage = async () => {
     if (!api || !selectedAccount || !selectedContact || !message) return;
     try {
@@ -173,122 +163,156 @@ function App() {
         alert('CID is too long for the chain (max 64 bytes).');
         return;
       }
-      const tx = api.tx.messaging.sendMessage(selectedContact, cidBytes);
-      await tx.signAndSend(selectedAccount.address, { signer: selectedAccount.signer });
+      await api.tx.messaging.sendMessage(selectedContact, cidBytes)
+        .signAndSend(selectedAccount.address, { signer: selectedAccount.signer });
       setMessage('');
-      setTimeout(() => { fetchAllMessages(); }, 2000);
+      fetchAllMessages();
+      setTimeout(fetchAllMessages, 2000);
     } catch (e) {
       alert('Send failed: ' + e.message);
     }
   };
 
+  // File upload handler
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const added = await ipfs.add(file);
+      const cid = added.cid.toString();
+      setMessage(`[file] ${file.name}: ${cid}`);
+    } catch (err) {
+      alert('File upload failed: ' + err.message);
+    }
+    setUploading(false);
+  };
+
+  // Add contact handler
+  const handleAddContact = () => {
+    if (
+      newContact &&
+      !contacts.includes(newContact) &&
+      newContact !== selectedAccount?.address
+    ) {
+      setContacts(prev => [...prev, newContact]);
+      setNewContact('');
+      inputRef.current?.focus();
+    }
+  };
+
   if (loading) return <div>Loading...</div>;
 
-  // Filter messages for the selected contact
-  const chatMessages = allMessages.filter(
-    msg =>
-      (msg.sender === selectedContact && msg.recipient === selectedAccount.address) ||
-      (msg.recipient === selectedContact && msg.sender === selectedAccount.address)
-  );
+  // Filter chat messages for UI
+  const chatMessages = selectedContact
+    ? allMessages.filter(
+        msg =>
+          (msg.sender === selectedContact && msg.recipient === selectedAccount.address) ||
+          (msg.recipient === selectedContact && msg.sender === selectedAccount.address)
+      )
+    : [];
 
   return (
-    <div className="chat-app" style={{ display: 'flex', height: '90vh' }}>
-      <div className="sidebar" style={{ width: 250, borderRight: '1px solid #ccc', padding: 10 }}>
-        <h3>Contacts</h3>
-        <ul style={{ listStyle: 'none', padding: 0 }}>
-          {contacts.map(addr => (
-            <li
-              key={addr}
-              title={addr}
-              style={{
-                padding: '8px',
-                background: addr === selectedContact ? '#e0e0e0' : 'transparent',
-                cursor: 'pointer'
-              }}
-              onClick={() => setSelectedContact(addr)}
-            >
-              {addr === selectedAccount?.address ? 'You' : addr.slice(0, 12) + '...'}
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div className="chat-window" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        
-          {/* Show selected contact's full address */}
-          {selectedContact && (
-            <div style={{
-              padding: '12px 16px',
-              borderBottom: '1px solid #ccc',
-              background: '#f5f5f5',
-              fontWeight: 'bold',
-              fontSize: 15
-            }}>
-              Chatting with: {selectedContact}
-            </div>
-          )}
-          <div style={{ flex: 1, overflowY: 'auto', padding: 16, background: '#fafafa' }}>
-            {selectedContact ? (
-              chatMessages.length ? (
-                chatMessages.map(msg => (
-                  <div
-                    key={msg.id}
-                    style={{
-                      margin: '8px 0',
-                      textAlign: msg.direction === 'out' ? 'right' : 'left'
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: 'inline-block',
-                        background: msg.direction === 'out' ? '#cce5ff' : '#e2e2e2',
-                        borderRadius: 8,
-                        padding: '8px 12px',
-                        maxWidth: '70%'
-                      }}
-                    >
-                      <div style={{ fontSize: 14 }}>
-                        {messageCache[msg.contentCid] || 'Loading...'}
-                      </div>
-                      <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>
-                        {blockToDate(msg.timestamp)}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div style={{ color: '#888', textAlign: 'center', marginTop: 40 }}>
-                  No messages yet.
-                </div>
-              )
-            ) : (
-              <div style={{ color: '#888', textAlign: 'center', marginTop: 40 }}>
-                Select a contact to start chatting.
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <div className="app-root">
+          <div className="chat-app">
+            {/* --- your existing header and chat UI code --- */}
+            <header className="app-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: 24 }}>
+              <span>Secura App</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <label style={{ marginRight: 8, color: '#fff', fontSize: '16px', fontWeight: 300 }}>Active Account:</label>
+                <select
+                  value={selectedAccount?.address || ''}
+                  onChange={e => {
+                    const acc = accounts.find(a => a.address === e.target.value);
+                    setSelectedAccount(acc);
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    border: '1px solid #ccc',
+                    fontSize: 15
+                  }}
+                >
+                  {accounts.map(acc => (
+                    <option key={acc.address} value={acc.address}>
+                      {acc.meta.name || acc.address}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  placeholder="Add contact address"
+                  value={newContact}
+                  onChange={e => setNewContact(e.target.value)}
+                  style={{ marginLeft: 12, marginRight: 8, padding: 4, width: 180, borderRadius: 6, border: '1px solid #ccc', fontSize: 15 }}
+                />
+                <button
+                  onClick={handleAddContact}
+                  disabled={
+                    !newContact ||
+                    contacts.includes(newContact) ||
+                    newContact === selectedAccount?.address
+                  }
+                  style={{
+                    padding: '6px 16px',
+                    borderRadius: 6,
+                    border: 'none',
+                    background: '#25d366',
+                    color: '#fff',
+                    fontWeight: 500,
+                    fontSize: 15,
+                    cursor: (!newContact ||
+                      contacts.includes(newContact) ||
+                      newContact === selectedAccount?.address) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Add Contact
+                </button>
               </div>
-            )}
-          </div>
-          <div style={{ padding: 12, borderTop: '1px solid #ccc', background: '#fff' }}>
-            <input
-              type="text"
-              placeholder="Type your message..."
-              value={message}
-              onChange={e => setMessage(e.target.value)}
-              style={{ width: '80%', padding: 8, fontSize: 16 }}
-              onKeyDown={e => {
-                if (e.key === 'Enter') sendMessage();
-              }}
-              disabled={!selectedContact}
-            />
-            <button
-              onClick={sendMessage}
-              style={{ marginLeft: 8, padding: '8px 16px', fontSize: 16 }}
-              disabled={!selectedContact || !message}
-            >
-              Send
-            </button>
+            </header>
+            <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+              <Sidebar
+                contacts={contacts}
+                selectedContact={selectedContact}
+                setSelectedContact={setSelectedContact}
+                selectedAccount={selectedAccount}
+              />
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <ChatWindow
+                  selectedContact={selectedContact}
+                  chatMessages={chatMessages}
+                  messageCache={messageCache}
+                  selectedAccount={selectedAccount}
+                />
+                <MessageInput
+                  message={message}
+                  setMessage={setMessage}
+                  sendMessage={sendMessage}
+                  selectedContact={selectedContact}
+                  handleFileUpload={handleFileUpload}
+                  uploading={uploading}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
-      );
+      <div style={{
+        width: '100%',
+        textAlign: 'center',
+        padding: '16px 0 12px 0',
+        color: '#888',
+        fontSize: 15,
+        letterSpacing: 1,
+        background: 'transparent'
+      }}>
+        Powered by Secura Chain
+      </div>
+    </div>
+  );
 }
 
-      export default App;
+export default App;
